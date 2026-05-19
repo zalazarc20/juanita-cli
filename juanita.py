@@ -247,6 +247,17 @@ def cmd_series_episode(slug, season, episode):
         elif "Siguiente" in text:
             nav_next = href
 
+    # Extract player.php URL (for series that have direct HLS)
+    player_url = None
+    for s in parse_servers(soup):
+        if "player.php" in s["url"]:
+            player_url = s["url"]
+            break
+    if not player_url:
+        iframe = soup.find("iframe", id="if-video")
+        if iframe:
+            player_url = iframe.get("src")
+
     return {
         "tmdb_id": tmdb_id,
         "title": title,
@@ -260,7 +271,24 @@ def cmd_series_episode(slug, season, episode):
         "nav_prev": nav_prev,
         "nav_next": nav_next,
         "servers": parse_servers(soup),
+        "player_url": player_url,
     }
+
+
+def cmd_series_stream(slug, season, episode):
+    """Extraer URL directa HLS de un episodio (si tiene player.php)"""
+    info = cmd_series_episode(slug, season, episode)
+    if not info["player_url"]:
+        return None
+    r = SESSION.get(info["player_url"])
+    r.raise_for_status()
+    m = re.search(r'file:\s*"([^"]+)"', r.text)
+    if m:
+        return m.group(1)
+    m = re.search(r"file:\s*'([^']+)'", r.text)
+    if m:
+        return m.group(1)
+    return None
 
 
 def cmd_series_season_episodes(slug, season):
@@ -439,7 +467,8 @@ def show_servers_dialog(info, hls_url=None):
             if nums:
                 s, e = int(nums[0][0]), int(nums[0][1])
                 new_info = cmd_series_episode(info["slug"], s, e)
-                show_servers_dialog(new_info)
+                new_hls = cmd_series_stream(info["slug"], s, e)
+                show_servers_dialog(new_info, new_hls)
                 return
         elif choice == "n" and info.get("nav_next"):
             href = info["nav_next"]
@@ -447,7 +476,8 @@ def show_servers_dialog(info, hls_url=None):
             if nums:
                 s, e = int(nums[0][0]), int(nums[0][1])
                 new_info = cmd_series_episode(info["slug"], s, e)
-                show_servers_dialog(new_info)
+                new_hls = cmd_series_stream(info["slug"], s, e)
+                show_servers_dialog(new_info, new_hls)
                 return
         elif choice.startswith("d"):
             num = choice[1:]
@@ -542,7 +572,8 @@ def pick_series_episode_flow(slug):
                         if 0 <= ep_idx < len(episodes):
                             ep = episodes[ep_idx]
                             ep_info = cmd_series_episode(slug, ep["season"], ep["episode"])
-                            show_servers_dialog(ep_info)
+                            hls = cmd_series_stream(slug, ep["season"], ep["episode"])
+                            show_servers_dialog(ep_info, hls)
                             return
                     print(f"  {C['red']}Inválido.{C['reset']}")
                 break
@@ -728,6 +759,12 @@ def cli_mode():
     sp.add_argument("episode", type=int)
     sp.add_argument("--json", action="store_true")
 
+    sp = sub.add_parser("series-stream", help="URL directa HLS de un episodio")
+    sp.add_argument("slug")
+    sp.add_argument("season", type=int)
+    sp.add_argument("episode", type=int)
+    sp.add_argument("--json", action="store_true")
+
     sp = sub.add_parser("series-seasons", help="Listar temporadas de una serie")
     sp.add_argument("slug")
     sp.add_argument("--json", action="store_true")
@@ -789,6 +826,17 @@ def cli_mode():
                 print(json.dumps(info, indent=2, ensure_ascii=False))
             else:
                 output_info(info, args.json)
+        elif args.cmd == "series-stream":
+            url = cmd_series_stream(args.slug, args.season, args.episode)
+            if args.json:
+                print(json.dumps({"url": url}, indent=2))
+            else:
+                if url:
+                    print(f"\n  URL del video (HLS):\n  {url}")
+                else:
+                    eprint("No se encontró stream directo para este episodio.")
+                    sys.exit(1)
+
         elif args.cmd == "series-seasons":
             info = cmd_series_episode(args.slug, 1, 1)
             seasons = info["seasons"]
