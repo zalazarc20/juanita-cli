@@ -6,13 +6,59 @@ Solo usa `requests` + `BeautifulSoup` — sin navegadores, sin Playwright, sin S
 
 ## Instalación
 
+### Linux / macOS
+
 ```bash
-# Linux / macOS / Windows (Git Bash)
+# Opción 1 — Script automático
 bash install.sh
 
-# O manual
-pip install requests beautifulsoup4
+# Opción 2 — Manual
+pip install requests beautifulsoup4 pyperclip
 python3 juanita.py
+
+# Opción 3 — Un solo comando (sin clonar el repo)
+bash <(curl -s https://raw.githubusercontent.com/zalazarc20/juanita-cli/main/install.sh)
+```
+
+> El script `install.sh` copia `juanita.py` a `/usr/local/bin/juanita` e instala las dependencias.  
+> El wrapper queda disponible como el comando `juanita` desde cualquier terminal.
+
+### Windows
+
+#### Requisitos
+
+- [Python 3.7+](https://python.org/downloads/) (marcar **"Add Python to PATH"** durante la instalación)
+
+#### Opción 1 — Script PowerShell (recomendado)
+
+Abrí **PowerShell como administrador** y ejecutá:
+
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force
+iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/zalazarc20/juanita-cli/main/install.ps1'))
+```
+
+Esto descarga e instala todo automáticamente (dependencias + wrapper + PATH).
+
+#### Opción 2 — Batch (cmd)
+
+Si clonaste el repo, ejecutá:
+
+```cmd
+install.bat
+```
+
+#### Opción 3 — PowerShell one-liner (sin clonar, sin políticas de ejecución)
+
+```powershell
+powershell -c "iwr https://raw.githubusercontent.com/zalazarc20/juanita-cli/main/install.ps1 -OutFile $env:TEMP\install-juanita.ps1; & $env:TEMP\install-juanita.ps1"
+```
+
+#### Opción 4 — Manual
+
+```cmd
+pip install requests beautifulsoup4 pyperclip
+python juanita.py
 ```
 
 ## Modo interactivo (menú)

@@ -48,9 +48,9 @@ install -m 755 "$SCRIPT_SRC" "$TARGET"
 
 # Verificar dependencias
 echo -e "${CYAN}► Verificando dependencias...${NC}"
-python3 -c "import requests; import bs4" 2>/dev/null || {
-  echo -e "${CYAN}► Instalando requests y beautifulsoup4...${NC}"
-  pip3 install --quiet requests beautifulsoup4
+    python3 -c "import requests; import bs4" 2>/dev/null || {
+  echo -e "${CYAN}► Instalando requests, beautifulsoup4 y pyperclip...${NC}"
+  pip3 install --quiet requests beautifulsoup4 pyperclip
 }
 
 echo -e "${GREEN}✓ Instalado en $TARGET${NC}"
