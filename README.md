@@ -1,106 +1,93 @@
 # Juanita CLI
 
-CLI en Python para obtener enlaces de películas desde [pelisjuanita.com](https://pelisjuanita.com/movies/estrenos/).
+CLI en Python para obtener enlaces de películas y series desde [pelisjuanita.com](https://pelisjuanita.com).
 
 Solo usa `requests` + `BeautifulSoup` — sin navegadores, sin Playwright, sin Selenium.
 
-## Requisitos
+## Instalación
 
 ```bash
+# Linux / macOS / Windows (Git Bash)
+bash install.sh
+
+# O manual
 pip install requests beautifulsoup4
-```
-
-## Modos de uso
-
-### 🎮 Modo interactivo (menú)
-
-Sin argumentos, arranca un menú visual con colores:
-
-```bash
 python3 juanita.py
 ```
 
-- Buscar películas por nombre
-- Explorar estrenos, populares, últimas agregadas (con paginación)
-- Seleccionar una película y ver todos sus enlaces
-- Abrir enlaces en navegador con solo presionar un número
-- Abrir el enlace directo HLS en VLC (`[V]`)
-- Copiar enlace directo al portapapeles (`[C]`)
+## Modo interactivo (menú)
 
-### ⌨️ Modo CLI (comandos directos)
+Sin argumentos:
 
 ```bash
-python3 juanita.py <comando> [opciones]
+juanita
 ```
 
-### `search` — Buscar películas
+Menú principal con películas y series, navegación numérica, selección de episodios por temporada, y apertura directa en navegador o VLC.
+
+## Modo CLI
 
 ```bash
-python3 juanita.py search "punisher"
-python3 juanita.py search "matrix" --page 2
-python3 juanita.py search "inception" --json
+juanita <comando> [opciones]
 ```
 
-### `list` — Listar películas por categoría
+### Películas
+
+| Comando | Descripción |
+|---|---|
+| `search <query>` | Buscar películas |
+| `list --category estrenos` | Listar por categoría |
+| `info <slug>` | Info + servidores |
+| `stream <slug>` | URL directa HLS |
+| `download <slug>` | Link de descarga |
 
 ```bash
-python3 juanita.py list
-python3 juanita.py list --category populares
-python3 juanita.py list --category ultimas-agregadas --page 3
-python3 juanita.py list --json
+juanita search "punisher"
+juanita search "matrix" --json
+juanita list --category populares --page 2
+juanita info the-punisher-la-ultima-muerte
+juanita info "https://pelisjuanita.com/movies/pelicula/the-punisher-la-ultima-muerte"
+juanita stream the-punisher-la-ultima-muerte
+juanita download the-punisher-la-ultima-muerte --lang latino
 ```
 
-Categorías disponibles: `estrenos` (default), `populares`, `ultimas-agregadas`.
+### Series
 
-### `info` — Info completa + servidores de una película
+| Comando | Descripción |
+|---|---|
+| `series-search <query>` | Buscar series |
+| `series-list --category populares` | Listar series |
+| `series-seasons <slug>` | Ver temporadas |
+| `series-episodes <slug> <season>` | Ver episodios de una temporada |
+| `series-episode <slug> <season> <ep>` | Info + servidores de un episodio |
 
 ```bash
-python3 juanita.py info the-punisher-la-ultima-muerte
-python3 juanita.py info "https://pelisjuanita.com/movies/pelicula/the-punisher-la-ultima-muerte"
-python3 juanita.py info the-punisher-la-ultima-muerte --json
+juanita series-search "breaking"
+juanita series-list --category estrenos
+juanita series-seasons breaking-bad
+juanita series-episodes breaking-bad 1
+juanita series-episode breaking-bad 1 1
+juanita series-episode breaking-bad 1 1 --json
 ```
 
-Muestra:
-- Título, sinopsis, slug
-- **Streaming:** Pelisjuanita (propio), Player4me, Seek, Dood, Byse, Voe, Vidsrc
-- **Descarga:** Dood, Byse, Voe, 1fichier, Player4me, Seek
+Todos aceptan `--json` para output estructurado.
 
-### `stream` — URL directa del video (HLS)
+## Endpoints (referencia)
 
-Extrae la URL `.m3u8` del player propio de Pelisjuanita (JWPlayer).
-
-```bash
-python3 juanita.py stream the-punisher-la-ultima-muerte
-python3 juanita.py stream the-punisher-la-ultima-muerte --json
-```
-
-> **Nota:** el token `hdnts` expira, la URL tiene tiempo de vida limitado.
-
-### `download` — Enlace de descarga directa
-
-```bash
-python3 juanita.py download the-punisher-la-ultima-muerte
-python3 juanita.py download the-punisher-la-ultima-muerte --lang latino
-python3 juanita.py download the-punisher-la-ultima-muerte --lang español --index 1
-python3 juanita.py download the-punisher-la-ultima-muerte --json
-```
-
-Idiomas: `latino`, `español`, `subtitulada`.
-
-## Salida JSON
-
-Todos los comandos aceptan `--json` para output estructurado.
-
-```bash
-python3 juanita.py search "avengers" --json | jq '.'
-python3 juanita.py info avengers-endgame --json | jq '.servers[] | select(.type=="stream")'
-```
-
-## Endpoints (para referencia)
+### Películas
 
 | Endpoint | Descripción |
 |---|---|
-| `GET /movies/movies.php?s=<query>` | Búsqueda de películas |
-| `GET /movies/movies.php?estrenos=&page=N` | Listar por categoría + paginación |
-| `GET /movies/movieInfo.php?title=<slug>` | Detalle de película + servidores |
-| `GET /movies/player.php?id=<id>` | Player JWPlayer con HLS embedido |
+| `GET /movies/movies.php?s=<query>` | Búsqueda |
+| `GET /movies/movies.php?estrenos=&page=N` | Listar + paginación |
+| `GET /movies/movieInfo.php?title=<slug>` | Detalle + servidores |
+| `GET /movies/player.php?id=<id>` | Player JWPlayer (HLS) |
+
+### Series
+
+| Endpoint | Descripción |
+|---|---|
+| `GET /series/apiSeries.php?s=<query>` | Búsqueda de series |
+| `GET /series/apiSeries.php?populares=&page=N` | Listar + paginación |
+| `GET /series/serieInfo.php?nombreSerie=X&nroTemporada=N&nroEpisodio=M` | Detalle episodio + servidores |
+| `GET /series/serieInfo.php?nombreSerie=X&temporada=N&snum=N&enum=N` | Episodios de una temporada |
