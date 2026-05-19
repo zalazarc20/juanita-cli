@@ -10,7 +10,24 @@ Solo usa `requests` + `BeautifulSoup` — sin navegadores, sin Playwright, sin S
 pip install requests beautifulsoup4
 ```
 
-## Uso
+## Modos de uso
+
+### 🎮 Modo interactivo (menú)
+
+Sin argumentos, arranca un menú visual con colores:
+
+```bash
+python3 juanita.py
+```
+
+- Buscar películas por nombre
+- Explorar estrenos, populares, últimas agregadas (con paginación)
+- Seleccionar una película y ver todos sus enlaces
+- Abrir enlaces en navegador con solo presionar un número
+- Abrir el enlace directo HLS en VLC (`[V]`)
+- Copiar enlace directo al portapapeles (`[C]`)
+
+### ⌨️ Modo CLI (comandos directos)
 
 ```bash
 python3 juanita.py <comando> [opciones]
