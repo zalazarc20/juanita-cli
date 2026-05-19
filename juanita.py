@@ -59,6 +59,8 @@ def parse_movie_card(a_tag):
     slug = a_tag.get("href", "").rstrip("/").split("/")[-1]
     h2 = a_tag.find("h2")
     title = h2.get_text(strip=True) if h2 else ""
+    img = a_tag.find("img")
+    image = img.get("src") or img.get("data-src") if img else None
     hover = a_tag.find("div", class_="hover-info")
     rating = year = "?"
     if hover:
@@ -68,7 +70,7 @@ def parse_movie_card(a_tag):
             rating = l.get_text(strip=True).replace("★", "").strip()
         if r:
             year = r.get_text(strip=True)
-    return {"title": title, "slug": slug, "rating": rating, "year": year}
+    return {"title": title, "slug": slug, "rating": rating, "year": year, "image": image}
 
 
 def parse_servers(soup):

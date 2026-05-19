@@ -118,6 +118,68 @@ juanita series-episode breaking-bad 1 1 --json
 
 Todos aceptan `--json` para output estructurado.
 
+La salida `--json` incluye ahora un campo `image` con la URL del poster de TMDB:
+
+```bash
+juanita search "punisher" --json | jq '.[0].image'
+# "https://image.tmdb.org/t/p/w300//qkyqQqQN8HAkLezR6xWTYzz6Icv.jpg"
+```
+
+## Integración con Rofi
+
+Buscá películas y series desde el lanzador Rofi con posters incluidos (via Kitty).
+
+### Requisitos
+
+- [Rofi](https://github.com/davatorium/rofi) (probado en 1.7.5)
+- `jq`
+- `curl`
+- `mpv` (para reproducir streams)
+- [Kitty](https://sw.kovidgoyal.net/kitty/) (para mostrar posters)
+- El comando `juanita` instalado globalmente (`install.sh` lo hace automáticamente)
+
+### Instalación
+
+```bash
+# Desde el repo
+sudo ln -s "$PWD/juanita-rofi" /usr/local/bin/juanita-rofi
+
+# O copiarlo
+sudo cp juanita-rofi /usr/local/bin/
+```
+
+### Uso
+
+```bash
+juanita-rofi
+```
+
+Flujo:
+1. Escribís el nombre de la película o serie
+2. Rofi muestra resultados combinados (🎬 películas + 📺 series)
+3. Seleccionás uno y elegís acción:
+   - **▶ Ver/Stream** — abre en `mpv`
+   - **⬇ Descargar** — muestra link de descarga
+   - **🖼 Ver poster** — muestra el poster con Kitty icat
+   - **ℹ Info** — detalles y servidores
+   - **🌐 Abrir en navegador** — abre en pelisjuanita.com
+
+Para series se puede navegar por temporada y episodio antes de reproducir.
+
+### Atajo de teclado
+
+Ejemplo para i3 / Hyprland / Sway:
+
+```
+bindsym $mod+j exec kitty -e juanita-rofi
+```
+
+O desde cualquier terminal:
+
+```bash
+kitty -e juanita-rofi
+```
+
 ## Endpoints (referencia)
 
 ### Películas

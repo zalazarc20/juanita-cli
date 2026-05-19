@@ -1,0 +1,146 @@
+#!/bin/bash
+set -euo pipefail
+
+JUANITA="juanita"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/juanita"
+mkdir -p "$CACHE_DIR"
+
+show_poster() {
+    local url="$1" title="$2"
+    [ -z "$url" ] && { rofi -e "No hay poster disponible para:\n$title"; return 1; }
+    local ext="${url##*.}"; ext="${ext%%\?*}"
+    [[ "$ext" =~ ^(jpg|jpeg|png|webp|gif)$ ]] || ext="jpg"
+    local cache="$CACHE_DIR/$(echo -n "$url" | md5sum | cut -d' ' -f1).$ext"
+    [ ! -f "$cache" ] && curl -sL -o "$cache" "$url" 2>/dev/null || true
+    if command -v kitty &>/dev/null; then
+        kitty +kitten icat --hold --transfer-mode file "$cache" &
+        local pid=$!
+        read -n1 -s -r -p $'\nPresiona cualquier tecla para cerrar el poster...'
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        kitty +kitten icat --clear 2>/dev/null || true
+    else
+        rofi -e "Poster URL:\n$url"
+    fi
+}
+
+query=$(rofi -dmenu -p "🔍 Juanita" -lines 1 \
+    -theme-str 'entry { placeholder: "Buscar película o serie..."; }' < /dev/null)
+[ -z "$query" ] && exit 1
+
+movies=$(timeout 15 $JUANITA search "$query" --json 2>/dev/null || echo '[]')
+series=$(timeout 15 $JUANITA series-search "$query" --json 2>/dev/null || echo '[]')
+
+slugs=(); types=(); images=(); titles=(); years=(); ratings=()
+display_lines=()
+
+populate() {
+    local json="$1" mtype="$2" icon="$3"
+    local len entry slug title year rating image
+    len=$(jq 'length' <<<"$json" 2>/dev/null || echo 0)
+    for i in $(seq 0 $((len - 1))); do
+        entry=$(jq -c ".[$i]" <<<"$json" 2>/dev/null)
+        [ -z "$entry" ] && continue
+        slug=$(jq -r '.slug // ""' <<<"$entry")
+        title=$(jq -r '.title // ""' <<<"$entry")
+        year=$(jq -r '.year // "?"' <<<"$entry")
+        rating=$(jq -r '.rating // "?"' <<<"$entry")
+        image=$(jq -r '.image // ""' <<<"$entry")
+        [ -z "$slug" ] && continue
+        slugs+=("$slug")
+        types+=("$mtype")
+        images+=("$image")
+        titles+=("$title")
+        years+=("$year")
+        ratings+=("$rating")
+        display_lines+=("$icon $title ($year) ★$rating")
+    done
+}
+
+populate "$movies" "movie" "🎬"
+populate "$series" "series" "📺"
+
+if [ ${#slugs[@]} -eq 0 ]; then
+    rofi -e "Sin resultados para:\n$query"
+    exit 1
+fi
+
+selected_idx=$(printf '%s\n' "${display_lines[@]}" | \
+    rofi -dmenu -p "📺 Resultados" -i -format i)
+[ -z "$selected_idx" ] && exit 1
+
+slug="${slugs[$selected_idx]}"
+type="${types[$selected_idx]}"
+title="${titles[$selected_idx]}"
+year="${years[$selected_idx]}"
+rating="${ratings[$selected_idx]}"
+image="${images[$selected_idx]}"
+
+if [ "$type" = "movie" ]; then
+    actions=("▶ Ver/Stream" "⬇ Descargar" "🖼 Ver poster" "ℹ Info" "🌐 Abrir en navegador")
+    action=$(printf '%s\n' "${actions[@]}" | \
+        rofi -dmenu -p "🎬 $title ($year)" -i -format i)
+    case $action in
+        0) url=$($JUANITA stream "$slug" 2>/dev/null)
+            if [ -n "$url" ]; then
+                if command -v mpv &>/dev/null; then
+                    rofi -e "Iniciando stream...\n$title"
+                    mpv "$url" &>/dev/null &
+                else
+                    echo "$url" | rofi -dmenu -p "URL del stream" -width 80
+                fi
+            else
+                rofi -e "No se encontró stream para:\n$title"
+            fi ;;
+        1) $JUANITA download "$slug" 2>/dev/null | head -5 | \
+            rofi -dmenu -p "⬇ $title" -width 80 -lines 10 ;;
+        2) show_poster "$image" "$title" ;;
+        3) $JUANITA info "$slug" 2>/dev/null | head -40 | \
+            rofi -dmenu -p "ℹ $title" -width 80 -lines 20 ;;
+        4) xdg-open "https://pelisjuanita.com/movies/movieInfo.php?title=$slug" &>/dev/null || true ;;
+    esac
+else
+    actions=("▶ Ver episodio" "🖼 Ver poster" "🌐 Abrir en navegador")
+    action=$(printf '%s\n' "${actions[@]}" | \
+        rofi -dmenu -p "📺 $title ($year)" -i -format i)
+    case $action in
+        0)  seasons_json=$($JUANITA series-seasons "$slug" --json 2>/dev/null)
+            s_len=$(jq 'length' <<<"$seasons_json" 2>/dev/null || echo 0)
+            [ "$s_len" -eq 0 ] && { rofi -e "No se encontraron temporadas"; exit 1; }
+            s_lines=(); s_nums=()
+            for i in $(seq 0 $((s_len - 1))); do
+                num=$(jq -r ".[$i].number // $((i+1))" <<<"$seasons_json")
+                s_nums+=("$num")
+                s_lines+=("Temporada $num")
+            done
+            s_idx=$(printf '%s\n' "${s_lines[@]}" | rofi -dmenu -p "📺 $title" -i -format i)
+            [ -z "$s_idx" ] && exit 1
+            season="${s_nums[$s_idx]}"
+            eps_json=$($JUANITA series-episodes "$slug" "$season" --json 2>/dev/null)
+            e_len=$(jq 'length' <<<"$eps_json" 2>/dev/null || echo 0)
+            [ "$e_len" -eq 0 ] && { rofi -e "No se encontraron episodios"; exit 1; }
+            e_lines=()
+            for i in $(seq 0 $((e_len - 1))); do
+                e_title=$(jq -r ".[$i].title // empty" <<<"$eps_json")
+                e_num=$(jq -r ".[$i].number // $((i+1))" <<<"$eps_json")
+                e_lines+=("E$e_num - ${e_title:-Sin título}")
+            done
+            e_idx=$(printf '%s\n' "${e_lines[@]}" | rofi -dmenu -p "📺 $title S${season}" -i -format i)
+            [ -z "$e_idx" ] && exit 1
+            e_num=$(jq -r ".[$e_idx].number // \"\"" <<<"$eps_json")
+            [ -z "$e_num" ] && e_num=$((e_idx + 1))
+            url=$($JUANITA series-stream "$slug" "$season" "$e_num" 2>/dev/null)
+            if [ -n "$url" ]; then
+                if command -v mpv &>/dev/null; then
+                    rofi -e "Iniciando stream... S${season}E${e_num}"
+                    mpv "$url" &>/dev/null &
+                else
+                    echo "$url" | rofi -dmenu -p "URL del stream" -width 80
+                fi
+            else
+                rofi -e "No se encontró stream para\nS${season}E${e_num}"
+            fi ;;
+        1) show_poster "$image" "$title" ;;
+        2) xdg-open "https://pelisjuanita.com/series/serieInfo.php?nombreSerie=$slug" &>/dev/null || true ;;
+    esac
+fi
