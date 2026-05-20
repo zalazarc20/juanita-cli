@@ -12,22 +12,14 @@ for cmd in mpv vlc; do
 done
 
 show_poster() {
-    local url="$1" title="$2"
-    [ -z "$url" ] && { rofi -e "No hay poster disponible para:\n$title"; return 1; }
+    local url="$1"
+    [ -z "$url" ] && { rofi -e "No hay poster disponible"; return 1; }
     local ext="${url##*.}"; ext="${ext%%\?*}"
     [[ "$ext" =~ ^(jpg|jpeg|png|webp|gif)$ ]] || ext="jpg"
     local cache="$CACHE_DIR/$(echo -n "$url" | md5sum | cut -d' ' -f1).$ext"
     [ ! -f "$cache" ] && curl -sL -o "$cache" "$url" 2>/dev/null || true
-    if command -v kitty &>/dev/null; then
-        kitty +kitten icat --hold --transfer-mode file "$cache" &
-        local pid=$!
-        read -n1 -s -r -p $'\nPresiona cualquier tecla para cerrar el poster...'
-        kill "$pid" 2>/dev/null || true
-        wait "$pid" 2>/dev/null || true
-        kitty +kitten icat --clear 2>/dev/null || true
-    else
-        rofi -e "Poster URL:\n$url"
-    fi
+    xdg-open "$cache" &>/dev/null &
+    rofi -e "Poster abierto.\nCerrá la ventana cuando termines."
 }
 
 query=$(rofi -dmenu -p "🔍 Juanita" -lines 1 \
