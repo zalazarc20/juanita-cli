@@ -163,59 +163,66 @@ if [ "$type" = "movie" ]; then
 
 # ── SERIES ───────────────────────────────────────────────────────
 else
-    actions=("▶ Ver episodio" "🖼 Ver poster" "🌐 Abrir en navegador")
+    # ── Season picker ──
+    seasons_data=$($JUANITA series-seasons "$slug" --json 2>/dev/null)
+    s_len=$(jq '.seasons | length' <<<"$seasons_data" 2>/dev/null || echo 0)
+    [ "$s_len" -eq 0 ] && { rofi -e "No se encontraron temporadas"; exit 1; }
+    s_lines=(); s_nums=()
+    for i in $(seq 0 $((s_len - 1))); do
+        num=$(jq -r ".seasons[$i]" <<<"$seasons_data")
+        s_nums+=("$num"); s_lines+=("Temporada $num")
+    done
+    s_idx=$(printf '%s\n' "${s_lines[@]}" | rofi -dmenu -p "📺 $title" -i -format i)
+    [ -z "$s_idx" ] && exit 1
+    season="${s_nums[$s_idx]}"
+
+    # ── Episode picker ──
+    eps_json=$($JUANITA series-episodes "$slug" "$season" --json 2>/dev/null)
+    e_len=$(jq 'length' <<<"$eps_json" 2>/dev/null || echo 0)
+    [ "$e_len" -eq 0 ] && { rofi -e "No se encontraron episodios"; exit 1; }
+    e_lines=()
+    for i in $(seq 0 $((e_len - 1))); do
+        e_title=$(jq -r ".[$i].title // empty" <<<"$eps_json")
+        e_num=$(jq -r ".[$i].episode // $((i+1))" <<<"$eps_json")
+        e_lines+=("E$e_num - ${e_title:-Sin título}")
+    done
+    e_idx=$(printf '%s\n' "${e_lines[@]}" | rofi -dmenu -p "📺 $title S${season}" -i -format i)
+    [ -z "$e_idx" ] && exit 1
+    e_num=$(jq -r ".[$e_idx].episode // \"\"" <<<"$eps_json")
+    [ -z "$e_num" ] && e_num=$((e_idx + 1))
+
+    # ── Actions (same as movies) ──
+    actions=("▶ Ver/Stream" "⬇ Descargar" "🖼 Ver poster" "ℹ Info" "🌐 Abrir en navegador")
     action=$(printf '%s\n' "${actions[@]}" | \
-        rofi -dmenu -p "📺 $title ($year)" -i -format i)
+        rofi -dmenu -p "📺 $title S${season}E${e_num}" -i -format i)
     [ -z "$action" ] && exit 1
 
+    ep_info=$($JUANITA series-episode "$slug" "$season" "$e_num" --json 2>/dev/null || echo '{}')
+    servers=$(jq -c '.servers // []' <<<"$ep_info" 2>/dev/null || echo '[]')
+
     case $action in
-        0) # episode flow
-            seasons_json=$($JUANITA series-seasons "$slug" --json 2>/dev/null)
-            s_len=$(jq 'length' <<<"$seasons_json" 2>/dev/null || echo 0)
-            [ "$s_len" -eq 0 ] && { rofi -e "No se encontraron temporadas"; exit 1; }
-            s_lines=(); s_nums=()
-            for i in $(seq 0 $((s_len - 1))); do
-                num=$(jq -r ".[$i].number // $((i+1))" <<<"$seasons_json")
-                s_nums+=("$num"); s_lines+=("Temporada $num")
-            done
-            s_idx=$(printf '%s\n' "${s_lines[@]}" | rofi -dmenu -p "📺 $title" -i -format i)
-            [ -z "$s_idx" ] && exit 1
-            season="${s_nums[$s_idx]}"
-
-            eps_json=$($JUANITA series-episodes "$slug" "$season" --json 2>/dev/null)
-            e_len=$(jq 'length' <<<"$eps_json" 2>/dev/null || echo 0)
-            [ "$e_len" -eq 0 ] && { rofi -e "No se encontraron episodios"; exit 1; }
-            e_lines=()
-            for i in $(seq 0 $((e_len - 1))); do
-                e_title=$(jq -r ".[$i].title // empty" <<<"$eps_json")
-                e_num=$(jq -r ".[$i].number // $((i+1))" <<<"$eps_json")
-                e_lines+=("E$e_num - ${e_title:-Sin título}")
-            done
-            e_idx=$(printf '%s\n' "${e_lines[@]}" | rofi -dmenu -p "📺 $title S${season}" -i -format i)
-            [ -z "$e_idx" ] && exit 1
-            e_num=$(jq -r ".[$e_idx].number // \"\"" <<<"$eps_json")
-            [ -z "$e_num" ] && e_num=$((e_idx + 1))
-
-            # Show servers for this episode
-            ep_info=$($JUANITA series-episode "$slug" "$season" "$e_num" --json 2>/dev/null || echo '{}')
-            ep_servers=$(jq -c '.servers // []' <<<"$ep_info" 2>/dev/null || echo '[]')
-            ep_count=$(jq 'length' <<<"$ep_servers" 2>/dev/null || echo 0)
-
-            if [ "$ep_count" -eq 0 ]; then
-                url=$($JUANITA series-stream "$slug" "$season" "$e_num" 2>/dev/null)
-                [ -n "$url" ] && open_url "$url" || rofi -e "No se encontró stream"
-            else
-                stream_servers=$(jq -c '[.[] | select(.type == "stream")]' <<<"$ep_servers")
-                selected=$(pick_server "$stream_servers" "$title S${season}E${e_num}" "▶ Stream") || exit 0
-                stream_url=$(jq -r '.url // ""' <<<"$selected")
-                if echo "$stream_url" | grep -q "player.php"; then
-                    hls=$(extract_hls "$stream_url")
-                    [ -n "$hls" ] && play_hls "$hls" || open_url "$stream_url"
+        0) # stream
+            stream_servers=$(jq -c '[.[] | select(.type == "stream")]' <<<"$servers")
+            selected=$(pick_server "$stream_servers" "$title S${season}E${e_num}" "▶ Stream") || exit 0
+            stream_url=$(jq -r '.url // ""' <<<"$selected")
+            if echo "$stream_url" | grep -q "player.php"; then
+                hls=$(extract_hls "$stream_url")
+                if [ -n "$hls" ]; then
+                    play_hls "$hls"
                 else
                     open_url "$stream_url"
                 fi
+            else
+                open_url "$stream_url"
             fi ;;
-        1) show_poster "$image" ;;
-        2) open_url "https://pelisjuanita.com/series/serieInfo.php?nombreSerie=$slug" ;;
+        1) # download
+            dl_servers=$(jq -c '[.[] | select(.type == "descarga")]' <<<"$servers")
+            selected=$(pick_server "$dl_servers" "$title S${season}E${e_num}" "⬇ Descargar") || exit 0
+            dl_url=$(jq -r '.download_url // .url // ""' <<<"$selected")
+            [ -n "$dl_url" ] && open_url "$dl_url" || rofi -e "No hay enlace de descarga" ;;
+        2) show_poster "$image" ;;
+        3) echo "$ep_info" | jq -r '"\(.title)\n\(.synopsis // "Sin sinopsis")\n\nSERVIDORES:"; .servers[] | "  [\(.lang)] \(.name) — \(.type) — \(.quality) — \(.url)"' | head -40 | \
+            rofi -dmenu -p "ℹ $title S${season}E${e_num}" -width 90 -lines 20 ;;
+        4) open_url "https://pelisjuanita.com/series/serieInfo.php?nombreSerie=$slug" ;;
     esac
 fi

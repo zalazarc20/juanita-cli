@@ -41,7 +41,7 @@ Usar la ruta absoluta en `Exec`. Luego aparece al escribir "Juanita" con Super+r
    - **🖼 Poster** → abre imagen
    - **ℹ Info** → sinopsis + servidores
    - **🌐 Abrir** → pelisjuanita.com
-4. Series: navegación temporada → episodio → servidor
+4. Series: navegación temporada → episodio → acciones (mismas que pelis)
 
 ## Dependencias
 

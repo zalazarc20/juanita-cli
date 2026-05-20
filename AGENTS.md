@@ -51,7 +51,13 @@ Script Bash que:
 2. Llama a `juanita search --json` y `juanita series-search --json`
 3. Muestra resultados combinados en rofi
 4. Ofrece acciones: stream (VLC para player.php, navegador para otros), descarga, poster, info
-5. Para series: navegación temporada → episodio → servidor
+5. Para series: **temporadas → episodios → acciones** (stream, descarga, poster, info, abrir)
 6. Extrae HLS directamente con `curl` + regex del player.php seleccionado
+
+## Notas para `juanita-rofi`
+
+- `series-seasons --json` devuelve `{"title": "...", "seasons": [1, 2, 3]}`, NO un array plano
+- `series-episodes --json` usa campo `episode` (no `number`)
+- El flujo de series es: seasons → episodes → actions (mismas que pelis), sin action menu inicial
 
 Dependencias: `rofi 1.7+`, `jq`, `curl`, `xdg-utils`, `mpv`/`vlc`
