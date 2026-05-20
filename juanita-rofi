@@ -5,7 +5,6 @@ JUANITA="juanita"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/juanita"
 mkdir -p "$CACHE_DIR"
 
-# detectar reproductor de video
 PLAYER=""
 for cmd in mpv vlc; do
     command -v "$cmd" &>/dev/null && PLAYER="$cmd" && break
@@ -21,6 +20,29 @@ show_poster() {
     xdg-open "$cache" &>/dev/null &
     rofi -e "Poster abierto.\nCerrá la ventana cuando termines."
 }
+
+# Show a list of servers from json and let user pick one
+# Returns the selected server as JSON on stdout
+pick_server() {
+    local json="$1" title="$2" action_label="$3"
+    local count
+    count=$(jq 'length' <<<"$json" 2>/dev/null || echo 0)
+    [ "$count" -eq 0 ] && { rofi -e "No hay servidores disponibles"; return 1; }
+    local lines=()
+    for i in $(seq 0 $((count - 1))); do
+        local lang name quality
+        lang=$(jq -r ".[$i].lang // \"?\"" <<<"$json")
+        name=$(jq -r ".[$i].name // \"?\"" <<<"$json")
+        quality=$(jq -r ".[$i].quality // \"\"" <<<"$json")
+        lines+=("[$lang] $name $quality")
+    done
+    local idx
+    idx=$(printf '%s\n' "${lines[@]}" | rofi -dmenu -p "$action_label — $title" -i -format i)
+    [ -z "$idx" ] && return 1
+    jq -c ".[$idx]" <<<"$json"
+}
+
+# ── main ───────────────────────────────────────────────────────
 
 query=$(rofi -dmenu -p "🔍 Juanita" -lines 1 \
     -theme-str 'entry { placeholder: "Buscar película o serie..."; }' < /dev/null)
@@ -45,12 +67,8 @@ populate() {
         rating=$(jq -r '.rating // "?"' <<<"$entry")
         image=$(jq -r '.image // ""' <<<"$entry")
         [ -z "$slug" ] && continue
-        slugs+=("$slug")
-        types+=("$mtype")
-        images+=("$image")
-        titles+=("$title")
-        years+=("$year")
-        ratings+=("$rating")
+        slugs+=("$slug"); types+=("$mtype"); images+=("$image")
+        titles+=("$title"); years+=("$year"); ratings+=("$rating")
         display_lines+=("$icon $title ($year) ★$rating")
     done
 }
@@ -71,49 +89,84 @@ slug="${slugs[$selected_idx]}"
 type="${types[$selected_idx]}"
 title="${titles[$selected_idx]}"
 year="${years[$selected_idx]}"
-rating="${ratings[$selected_idx]}"
 image="${images[$selected_idx]}"
 
+# helper: play a stream URL
+play_url() {
+    local url="$1"
+    if [ -n "$PLAYER" ]; then
+        rofi -e "Iniciando stream...\n$title"
+        "$PLAYER" "$url" &>/dev/null &
+    else
+        xdg-open "$url" &>/dev/null &
+        rofi -e "Abriendo stream en el navegador..."
+    fi
+}
+
+# helper: open a URL in browser
+open_url() {
+    local url="$1"
+    xdg-open "$url" &>/dev/null &
+    rofi -e "Abriendo en el navegador..."
+}
+
+# ── MOVIE ────────────────────────────────────────────────────────
 if [ "$type" = "movie" ]; then
     actions=("▶ Ver/Stream" "⬇ Descargar" "🖼 Ver poster" "ℹ Info" "🌐 Abrir en navegador")
     action=$(printf '%s\n' "${actions[@]}" | \
         rofi -dmenu -p "🎬 $title ($year)" -i -format i)
+    [ -z "$action" ] && exit 1
+
+    info_json=$($JUANITA info "$slug" --json 2>/dev/null || echo '{}')
+    servers=$(jq -c '.servers // []' <<<"$info_json" 2>/dev/null || echo '[]')
+
     case $action in
-        0) url=$($JUANITA stream "$slug" 2>/dev/null)
-            if [ -n "$url" ]; then
-                if [ -n "$PLAYER" ]; then
-                    rofi -e "Iniciando stream...\n$title"
-                    "$PLAYER" "$url" &>/dev/null &
+        0) # stream
+            stream_servers=$(jq -c '[.[] | select(.type == "stream")]' <<<"$servers")
+            selected=$(pick_server "$stream_servers" "$title" "▶ Stream") || exit 0
+            stream_url=$(jq -r '.url // ""' <<<"$selected")
+            if echo "$stream_url" | grep -q "player.php"; then
+                hls=$($JUANITA stream "$slug" 2>/dev/null)
+                if [ -n "$hls" ]; then
+                    play_url "$hls"
                 else
-                    echo "$url" | rofi -dmenu -p "URL del stream" -width 80
+                    open_url "$stream_url"
                 fi
             else
-                rofi -e "No se encontró stream para:\n$title"
+                open_url "$stream_url"
             fi ;;
-        1) $JUANITA download "$slug" 2>/dev/null | head -5 | \
-            rofi -dmenu -p "⬇ $title" -width 80 -lines 10 ;;
-        2) show_poster "$image" "$title" ;;
-        3) $JUANITA info "$slug" 2>/dev/null | head -40 | \
-            rofi -dmenu -p "ℹ $title" -width 80 -lines 20 ;;
-        4) xdg-open "https://pelisjuanita.com/movies/movieInfo.php?title=$slug" &>/dev/null || true ;;
+        1) # download
+            dl_servers=$(jq -c '[.[] | select(.type == "descarga")]' <<<"$servers")
+            selected=$(pick_server "$dl_servers" "$title" "⬇ Descargar") || exit 0
+            dl_url=$(jq -r '.download_url // .url // ""' <<<"$selected")
+            [ -n "$dl_url" ] && open_url "$dl_url" || rofi -e "No hay enlace de descarga" ;;
+        2) show_poster "$image" ;;
+        3) echo "$info_json" | jq -r '"\(.title)\n\(.synopsis // "Sin sinopsis")\n\nSERVIDORES:"; .servers[] | "  [\(.lang)] \(.name) — \(.type) — \(.quality) — \(.url)"' | head -40 | \
+            rofi -dmenu -p "ℹ $title" -width 90 -lines 20 ;;
+        4) open_url "https://pelisjuanita.com/movies/movieInfo.php?title=$slug" ;;
     esac
+
+# ── SERIES ───────────────────────────────────────────────────────
 else
     actions=("▶ Ver episodio" "🖼 Ver poster" "🌐 Abrir en navegador")
     action=$(printf '%s\n' "${actions[@]}" | \
         rofi -dmenu -p "📺 $title ($year)" -i -format i)
+    [ -z "$action" ] && exit 1
+
     case $action in
-        0)  seasons_json=$($JUANITA series-seasons "$slug" --json 2>/dev/null)
+        0) # episode flow
+            seasons_json=$($JUANITA series-seasons "$slug" --json 2>/dev/null)
             s_len=$(jq 'length' <<<"$seasons_json" 2>/dev/null || echo 0)
             [ "$s_len" -eq 0 ] && { rofi -e "No se encontraron temporadas"; exit 1; }
             s_lines=(); s_nums=()
             for i in $(seq 0 $((s_len - 1))); do
                 num=$(jq -r ".[$i].number // $((i+1))" <<<"$seasons_json")
-                s_nums+=("$num")
-                s_lines+=("Temporada $num")
+                s_nums+=("$num"); s_lines+=("Temporada $num")
             done
             s_idx=$(printf '%s\n' "${s_lines[@]}" | rofi -dmenu -p "📺 $title" -i -format i)
             [ -z "$s_idx" ] && exit 1
             season="${s_nums[$s_idx]}"
+
             eps_json=$($JUANITA series-episodes "$slug" "$season" --json 2>/dev/null)
             e_len=$(jq 'length' <<<"$eps_json" 2>/dev/null || echo 0)
             [ "$e_len" -eq 0 ] && { rofi -e "No se encontraron episodios"; exit 1; }
@@ -127,18 +180,29 @@ else
             [ -z "$e_idx" ] && exit 1
             e_num=$(jq -r ".[$e_idx].number // \"\"" <<<"$eps_json")
             [ -z "$e_num" ] && e_num=$((e_idx + 1))
-            url=$($JUANITA series-stream "$slug" "$season" "$e_num" 2>/dev/null)
-            if [ -n "$url" ]; then
-                if [ -n "$PLAYER" ]; then
-                    rofi -e "Iniciando stream... S${season}E${e_num}"
-                    "$PLAYER" "$url" &>/dev/null &
-                else
-                    echo "$url" | rofi -dmenu -p "URL del stream" -width 80
-                fi
+
+            # Show servers for this episode
+            ep_info=$($JUANITA series-episode "$slug" "$season" "$e_num" --json 2>/dev/null || echo '{}')
+            ep_servers=$(jq -c '.servers // []' <<<"$ep_info" 2>/dev/null || echo '[]')
+            ep_count=$(jq 'length' <<<"$ep_servers" 2>/dev/null || echo 0)
+
+            if [ "$ep_count" -eq 0 ]; then
+                # fallback: direct stream
+                url=$($JUANITA series-stream "$slug" "$season" "$e_num" 2>/dev/null)
+                [ -n "$url" ] && play_url "$url" || rofi -e "No se encontró stream"
             else
-                rofi -e "No se encontró stream para\nS${season}E${e_num}"
+                # show stream servers to pick from
+                stream_servers=$(jq -c '[.[] | select(.type == "stream")]' <<<"$ep_servers")
+                selected=$(pick_server "$stream_servers" "$title S${season}E${e_num}" "▶ Stream") || exit 0
+                stream_url=$(jq -r '.url // ""' <<<"$selected")
+                if echo "$stream_url" | grep -q "player.php"; then
+                    hls=$($JUANITA series-stream "$slug" "$season" "$e_num" 2>/dev/null)
+                    [ -n "$hls" ] && play_url "$hls" || open_url "$stream_url"
+                else
+                    open_url "$stream_url"
+                fi
             fi ;;
-        1) show_poster "$image" "$title" ;;
-        2) xdg-open "https://pelisjuanita.com/series/serieInfo.php?nombreSerie=$slug" &>/dev/null || true ;;
+        1) show_poster "$image" ;;
+        2) open_url "https://pelisjuanita.com/series/serieInfo.php?nombreSerie=$slug" ;;
     esac
 fi
