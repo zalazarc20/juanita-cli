@@ -5,6 +5,12 @@ JUANITA="juanita"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/juanita"
 mkdir -p "$CACHE_DIR"
 
+# detectar reproductor de video
+PLAYER=""
+for cmd in mpv vlc; do
+    command -v "$cmd" &>/dev/null && PLAYER="$cmd" && break
+done
+
 show_poster() {
     local url="$1" title="$2"
     [ -z "$url" ] && { rofi -e "No hay poster disponible para:\n$title"; return 1; }
@@ -83,9 +89,9 @@ if [ "$type" = "movie" ]; then
     case $action in
         0) url=$($JUANITA stream "$slug" 2>/dev/null)
             if [ -n "$url" ]; then
-                if command -v mpv &>/dev/null; then
+                if [ -n "$PLAYER" ]; then
                     rofi -e "Iniciando stream...\n$title"
-                    mpv "$url" &>/dev/null &
+                    "$PLAYER" "$url" &>/dev/null &
                 else
                     echo "$url" | rofi -dmenu -p "URL del stream" -width 80
                 fi
@@ -131,9 +137,9 @@ else
             [ -z "$e_num" ] && e_num=$((e_idx + 1))
             url=$($JUANITA series-stream "$slug" "$season" "$e_num" 2>/dev/null)
             if [ -n "$url" ]; then
-                if command -v mpv &>/dev/null; then
+                if [ -n "$PLAYER" ]; then
                     rofi -e "Iniciando stream... S${season}E${e_num}"
-                    mpv "$url" &>/dev/null &
+                    "$PLAYER" "$url" &>/dev/null &
                 else
                     echo "$url" | rofi -dmenu -p "URL del stream" -width 80
                 fi
