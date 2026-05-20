@@ -92,22 +92,37 @@ year="${years[$selected_idx]}"
 image="${images[$selected_idx]}"
 
 # helper: play a stream URL
-play_url() {
+open_url() {
+    local url="$1"
+    xdg-open "$url" &>/dev/null &
+    rofi -e "Abriendo en el navegador..."
+}
+
+play_hls() {
     local url="$1"
     if [ -n "$PLAYER" ]; then
         rofi -e "Iniciando stream...\n$title"
         "$PLAYER" "$url" &>/dev/null &
     else
-        xdg-open "$url" &>/dev/null &
-        rofi -e "Abriendo stream en el navegador..."
+        open_url "$url"
     fi
 }
 
-# helper: open a URL in browser
-open_url() {
-    local url="$1"
-    xdg-open "$url" &>/dev/null &
-    rofi -e "Abriendo en el navegador..."
+extract_hls() {
+    local player_url="$1"
+    local hls
+    hls=$(curl -sL -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" \
+        -H "Referer: https://pelisjuanita.com/" \
+        "$player_url" | python3 -c "
+import sys, re
+html = sys.stdin.read()
+m = re.search(r'file:\s*\"([^\"]+)\"', html)
+if m: print(m.group(1))
+else:
+    m = re.search(r\"file:\s*'([^']+)'\", html)
+    if m: print(m.group(1))
+" 2>/dev/null)
+    echo "$hls"
 }
 
 # ── MOVIE ────────────────────────────────────────────────────────
@@ -126,9 +141,9 @@ if [ "$type" = "movie" ]; then
             selected=$(pick_server "$stream_servers" "$title" "▶ Stream") || exit 0
             stream_url=$(jq -r '.url // ""' <<<"$selected")
             if echo "$stream_url" | grep -q "player.php"; then
-                hls=$($JUANITA stream "$slug" 2>/dev/null)
+                hls=$(extract_hls "$stream_url")
                 if [ -n "$hls" ]; then
-                    play_url "$hls"
+                    play_hls "$hls"
                 else
                     open_url "$stream_url"
                 fi
@@ -187,17 +202,15 @@ else
             ep_count=$(jq 'length' <<<"$ep_servers" 2>/dev/null || echo 0)
 
             if [ "$ep_count" -eq 0 ]; then
-                # fallback: direct stream
                 url=$($JUANITA series-stream "$slug" "$season" "$e_num" 2>/dev/null)
-                [ -n "$url" ] && play_url "$url" || rofi -e "No se encontró stream"
+                [ -n "$url" ] && open_url "$url" || rofi -e "No se encontró stream"
             else
-                # show stream servers to pick from
                 stream_servers=$(jq -c '[.[] | select(.type == "stream")]' <<<"$ep_servers")
                 selected=$(pick_server "$stream_servers" "$title S${season}E${e_num}" "▶ Stream") || exit 0
                 stream_url=$(jq -r '.url // ""' <<<"$selected")
                 if echo "$stream_url" | grep -q "player.php"; then
-                    hls=$($JUANITA series-stream "$slug" "$season" "$e_num" 2>/dev/null)
-                    [ -n "$hls" ] && play_url "$hls" || open_url "$stream_url"
+                    hls=$(extract_hls "$stream_url")
+                    [ -n "$hls" ] && play_hls "$hls" || open_url "$stream_url"
                 else
                     open_url "$stream_url"
                 fi
